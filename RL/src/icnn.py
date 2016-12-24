@@ -56,18 +56,25 @@ class Agent:
         act = tf.placeholder(tf.float32, [None, dimA], "act")
         rew = tf.placeholder(tf.float32, [None], "rew")
         with tf.variable_scope('q'):
-            negQ = self.negQ(obs, act)
+            negQ = self.negQ(obs, act, True)
+        with tf.variable_scope('q', reuse=True):
+            negQnodrop = self.negQ(obs, act, False, True)
         negQ_entr = negQ - entropy(act)
+        negQnodrop_entr = negQ - entropy(act)
         q = -negQ
+        qnodrop = -negQnodrop
         q_entr = -negQ_entr
+        qnodrop_entr = -negQnodrop_entr
         act_grad, = tf.gradients(negQ, act)
+        actnodrop_grad, = tf.gradients(negQnodrop, act)
         act_grad_entr, = tf.gradients(negQ_entr, act)
+        actnodrop_grad_entr, = tf.gradients(negQnodrop_entr, act)
 
         obs_target = tf.placeholder(tf.float32, [None, dimO], "obs_target")
         act_target = tf.placeholder(tf.float32, [None, dimA], "act_target")
         term_target = tf.placeholder(tf.bool, [None], "term_target")
         with tf.variable_scope('q_target'):
-            negQ_target = self.negQ(obs_target, act_target)
+            negQ_target = self.negQ(obs_target, act_target, False)
         negQ_entr_target = negQ_target - entropy(act_target)
         act_target_grad, = tf.gradients(negQ_target, act_target)
         act_entr_target_grad, = tf.gradients(negQ_entr_target, act_target)
@@ -129,6 +136,9 @@ class Agent:
             self._fg_entr = Fun([obs, act], [negQ_entr, act_grad_entr])
             self._fg_entr_target = Fun([obs_target, act_target],
                                        [negQ_entr_target, act_entr_target_grad])
+
+            self._fg_nodrop = Fun([obs, act], [negQnodrop, actnodrop_grad])
+
 
         # initialize tf variables
         self.saver = tf.train.Saver(max_to_keep=1)
@@ -270,7 +280,7 @@ class Agent:
                 f = self._fg_entr
                 # f = self._fg
             elif FLAGS.icnn_opt == 'bundle_entropy':
-                f = self._fg
+                f = self._fg_nodrop
             else:
                 raise RuntimeError("Unrecognized ICNN optimizer: "+FLAGS.icnn_opt)
 
@@ -322,7 +332,7 @@ class Agent:
             self.sess.run(self.proj)
             return loss
 
-    def negQ(self, x, y, reuse=False):
+    def negQ(self, x, y, dropout=True, reuse=False):
         szs = [FLAGS.l1size, FLAGS.l2size]
         assert(len(szs) >= 1)
         fc = tflearn.fully_connected
@@ -340,11 +350,15 @@ class Agent:
         z_us = []
 
         reg = 'L2'
+        large_init = tf.truncated_normal_initializer(stddev=0.2)
 
         prevU = x
         for i in range(nLayers):
             with tf.variable_scope('u'+str(i)) as s:
-                u = fc(prevU, szs[i], reuse=reuse, scope=s, regularizer=reg)
+                if i == 0:
+                    u = fc(prevU, szs[i], reuse=reuse, scope=s, weights_init=large_init, regularizer=reg)
+                else:
+                    u = fc(prevU, szs[i], reuse=reuse, scope=s, regularizer=reg)
                 if i < nLayers-1:
                     u = tf.nn.relu(u)
                     if FLAGS.icnn_bn:
@@ -360,8 +374,8 @@ class Agent:
             if i > 0:
                 with tf.variable_scope('z{}_zu_u'.format(i)) as s:
                     zu_u = fc(prevU, szs[i-1], reuse=reuse, scope=s,
-                              activation='relu', bias=True,
-                              regularizer=reg, bias_init=tf.constant_initializer(1.))
+                              activation='sigmoid', bias=True,
+                              regularizer=reg, bias_init=tf.constant_initializer(0.))
                     variable_summaries(zu_u, suffix='zu_u{}'.format(i))
                 with tf.variable_scope('z{}_zu_proj'.format(i)) as s:
                     z_zu = fc(tf.mul(prevZ, zu_u), sz, reuse=reuse, scope=s,
@@ -371,29 +385,42 @@ class Agent:
                 z_add.append(z_zu)
 
             with tf.variable_scope('z{}_yu_u'.format(i)) as s:
-                yu_u = fc(prevU, self.dimA, reuse=reuse, scope=s, bias=True,
-                          regularizer=reg, bias_init=tf.constant_initializer(1.))
+                yu_u = fc(prevU, self.dimA, reuse=reuse, scope=s, activation='sigmoid', bias=True,
+                          regularizer=reg, bias_init=tf.constant_initializer(0.))
                 variable_summaries(yu_u, suffix='yu_u{}'.format(i))
             with tf.variable_scope('z{}_yu'.format(i)) as s:
-                z_yu = fc(tf.mul(y, yu_u), sz, reuse=reuse, scope=s, bias=False,
-                          regularizer=reg)
+                z_yu = fc(tf.mul(y, yu_u), sz, reuse=reuse, scope=s, bias=False, weights_init=large_init,
+                        regularizer=reg)
+
                 z_ys.append(z_yu)
                 variable_summaries(z_yu, suffix='z_yu{}'.format(i))
             z_add.append(z_yu)
 
             with tf.variable_scope('z{}_u'.format(i)) as s:
-                z_u = fc(prevU, sz, reuse=reuse, scope=s,
-                         bias=True, regularizer=reg,
-                         bias_init=tf.constant_initializer(0.))
+                if i == 0:
+                    z_u = fc(prevU, sz, reuse=reuse, scope=s,
+                             bias=True, regularizer=reg, weights_init=large_init,
+                             bias_init=tf.constant_initializer(0.))
+                else:
+                    z_u = fc(prevU, sz, reuse=reuse, scope=s,
+                             bias=True, regularizer=reg,
+                             bias_init=tf.constant_initializer(0.))
                 variable_summaries(z_u, suffix='z_u{}'.format(i))
+
             z_us.append(z_u)
             z_add.append(z_u)
 
             z = tf.add_n(z_add)
             variable_summaries(z, suffix='z{}_preact'.format(i))
             if i < nLayers:
+                if dropout:
+                    z = tf.nn.dropout(z, 0.5)
                 # z = tf.nn.relu(z)
                 z = lrelu(z, alpha=FLAGS.lrelu)
+                convex_path_loss = 1. * tf.square(tf.reduce_mean(z) - 0.1)
+                convex_path_loss += 1. * tf.reduce_mean(tf.square(z))
+                tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, convex_path_loss)
+
                 variable_summaries(z, suffix='z{}_act'.format(i))
 
             zs.append(z)
