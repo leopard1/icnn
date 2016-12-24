@@ -44,19 +44,19 @@ def main():
         hp_alg = {
             'l1size': l1size,
             'l2size': l2size,
-            'reward_k': 10.**npr.uniform(-4, 1),
-            'l2norm': 10.**npr.uniform(-10, -2),
-            'pl2norm': 10.**npr.uniform(-10, -2),
-            'rate': 10.**npr.uniform(-4, -1),
-            'prate': 10.**npr.uniform(-4, -1),
+            'reward_k': 10.**npr.uniform(-2, 0),
+            'l2norm': 10.**npr.uniform(-6, -2),
+            'pl2norm': 10.**npr.uniform(-6, -2),
+            'rate': 10.**npr.uniform(-4, -2),
+            'prate': 10.**npr.uniform(-4, -2),
             'outheta': np.maximum(1e-8, npr.normal(loc=0.15, scale=0.1)),
             'ousigma': np.maximum(1e-8, npr.normal(loc=0.1, scale=0.05)),
             'lrelu': 10.**npr.uniform(-4, -1),
             'naf_bn': bool(npr.binomial(1, 0.5)),
-            'icnn_bn': bool(npr.binomial(1, 0.5))
+            'icnn_bn': False#bool(npr.binomial(1, 0.5))
         }
-        if hp_alg['l2norm'] < 1e-8: hp_alg['l2norm'] = 0.
-        if hp_alg['pl2norm'] < 1e-8: hp_alg['pl2norm'] = 0.
+        if hp_alg['l2norm'] < 1e-5: hp_alg['l2norm'] = 0.
+        if hp_alg['pl2norm'] < 1e-5: hp_alg['pl2norm'] = 0.
         if hp_alg['lrelu'] < 1e-3: hp_alg['lrelu'] = 0.
 
         for alg in algs:
