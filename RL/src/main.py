@@ -108,6 +108,9 @@ class Experiment(object):
             os.system('{} {}'.format(plotScr, FLAGS.outdir))
 
         self.env.monitor.close()
+        os.makedirs(os.path.join(FLAGS.outdir, "tf"))
+        ckpt = os.path.join(FLAGS.outdir, "tf/model.ckpt")
+        self.agent.saver.save(self.agent.sess, ckpt)
 
     def run_episode(self, test=True, monitor=False):
         self.env.monitor.configure(lambda _: monitor)
