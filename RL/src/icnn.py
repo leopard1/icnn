@@ -56,7 +56,7 @@ class Agent:
         act = tf.placeholder(tf.float32, [None, dimA], "act")
         rew = tf.placeholder(tf.float32, [None], "rew")
         with tf.variable_scope('q'):
-            negQ = self.negQ(obs, act, True)
+            negQ = self.negQ(obs, act, FLAGS.icnn_dropout)
         with tf.variable_scope('q', reuse=True):
             negQnodrop = self.negQ(obs, act, False, True)
         negQ_entr = negQ - entropy(act)
@@ -417,7 +417,7 @@ class Agent:
                     z = tf.nn.dropout(z, 0.5)
                 # z = tf.nn.relu(z)
                 z = lrelu(z, alpha=FLAGS.lrelu)
-                convex_path_loss = 1. * tf.square(tf.reduce_mean(z) - 0.1)
+                convex_path_loss = 1. * tf.square(tf.reduce_mean(z) - FLAGS.icnn_mean)
                 convex_path_loss += 1. * tf.reduce_mean(tf.square(z))
                 tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, convex_path_loss)
 
