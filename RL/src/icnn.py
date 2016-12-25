@@ -350,7 +350,7 @@ class Agent:
         z_us = []
 
         reg = 'L2'
-        large_init = tf.truncated_normal_initializer(stddev=0.2)
+        large_init = tf.truncated_normal_initializer(stddev=FLAGS.icnn_initstd)
 
         prevU = x
         for i in range(nLayers):
